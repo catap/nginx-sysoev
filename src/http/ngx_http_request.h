@@ -60,6 +60,7 @@
 #define NGX_HTTP_ZERO_IN_URI               1
 #define NGX_HTTP_SUBREQUEST_IN_MEMORY      2
 #define NGX_HTTP_SUBREQUEST_WAITED         4
+#define NGX_HTTP_LOG_UNSAFE                8
 
 
 #define NGX_HTTP_OK                        200
@@ -184,7 +185,7 @@ typedef struct {
 
     ngx_table_elt_t                  *keep_alive;
 
-#if (NGX_HTTP_PROXY || NGX_HTTP_REALIP)
+#if (NGX_HTTP_PROXY || NGX_HTTP_REALIP || NGX_HTTP_GEO)
     ngx_table_elt_t                  *x_forwarded_for;
 #endif
 
@@ -488,7 +489,6 @@ struct ngx_http_request_s {
     unsigned                          root_tested:1;
     unsigned                          done:1;
     unsigned                          logged:1;
-    unsigned                          utf8:1;
 
     unsigned                          buffered:4;
 

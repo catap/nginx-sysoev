@@ -433,6 +433,14 @@ static ngx_command_t  ngx_http_core_commands[] = {
       offsetof(ngx_http_core_loc_conf_t, limit_rate),
       NULL },
 
+    { ngx_string("limit_rate_after"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF
+                        |NGX_CONF_TAKE1,
+      ngx_conf_set_size_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_core_loc_conf_t, limit_rate_after),
+      NULL },
+
     { ngx_string("keepalive_timeout"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE12,
       ngx_http_core_keepalive,
@@ -877,6 +885,7 @@ ngx_http_core_find_config_phase(ngx_http_request_t *r,
                       "client intended to send too large body: %O bytes",
                       r->headers_in.content_length_n);
 
+        (void) ngx_http_discard_request_body(r);
         ngx_http_finalize_request(r, NGX_HTTP_REQUEST_ENTITY_TOO_LARGE);
         return NGX_OK;
     }
@@ -2691,14 +2700,14 @@ ngx_http_core_create_main_conf(ngx_conf_t *cf)
 
     cmcf = ngx_pcalloc(cf->pool, sizeof(ngx_http_core_main_conf_t));
     if (cmcf == NULL) {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     if (ngx_array_init(&cmcf->servers, cf->pool, 4,
                        sizeof(ngx_http_core_srv_conf_t *))
         != NGX_OK)
     {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     cmcf->server_names_hash_max_size = NGX_CONF_UNSET_UINT;
@@ -2750,7 +2759,7 @@ ngx_http_core_create_srv_conf(ngx_conf_t *cf)
 
     cscf = ngx_pcalloc(cf->pool, sizeof(ngx_http_core_srv_conf_t));
     if (cscf == NULL) {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     /*
@@ -2763,14 +2772,14 @@ ngx_http_core_create_srv_conf(ngx_conf_t *cf)
                        sizeof(ngx_http_listen_t))
         != NGX_OK)
     {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     if (ngx_array_init(&cscf->server_names, cf->temp_pool, 4,
                        sizeof(ngx_http_server_name_t))
         != NGX_OK)
     {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     cscf->connection_pool_size = NGX_CONF_UNSET_SIZE;
@@ -2881,7 +2890,7 @@ ngx_http_core_create_loc_conf(ngx_conf_t *cf)
 
     lcf = ngx_pcalloc(cf->pool, sizeof(ngx_http_core_loc_conf_t));
     if (lcf == NULL) {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     /*
@@ -2920,6 +2929,7 @@ ngx_http_core_create_loc_conf(ngx_conf_t *cf)
     lcf->send_lowat = NGX_CONF_UNSET_SIZE;
     lcf->postpone_output = NGX_CONF_UNSET_SIZE;
     lcf->limit_rate = NGX_CONF_UNSET_SIZE;
+    lcf->limit_rate_after = NGX_CONF_UNSET_SIZE;
     lcf->keepalive_timeout = NGX_CONF_UNSET_MSEC;
     lcf->keepalive_header = NGX_CONF_UNSET;
     lcf->keepalive_requests = NGX_CONF_UNSET_UINT;
@@ -3119,6 +3129,8 @@ ngx_http_core_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_size_value(conf->postpone_output, prev->postpone_output,
                               1460);
     ngx_conf_merge_size_value(conf->limit_rate, prev->limit_rate, 0);
+    ngx_conf_merge_size_value(conf->limit_rate_after, prev->limit_rate_after,
+                              0);
     ngx_conf_merge_msec_value(conf->keepalive_timeout,
                               prev->keepalive_timeout, 75000);
     ngx_conf_merge_sec_value(conf->keepalive_header,
