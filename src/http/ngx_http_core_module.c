@@ -773,7 +773,11 @@ ngx_http_handler(ngx_http_request_t *r)
     }
 
     r->valid_location = 1;
-    r->gzip = 0;
+#if (NGX_HTTP_GZIP)
+    r->gzip_tested = 0;
+    r->gzip_ok = 0;
+    r->gzip_vary = 0;
+#endif
 
     r->write_event_handler = ngx_http_core_run_phases;
     ngx_http_core_run_phases(r);
@@ -1199,7 +1203,10 @@ ngx_http_core_try_files_phase(ngx_http_request_t *r,
         if (ngx_open_cached_file(clcf->open_file_cache, &path, &of, r->pool)
             != NGX_OK)
         {
-            if (of.err != NGX_ENOENT && of.err != NGX_ENOTDIR) {
+            if (of.err != NGX_ENOENT
+                && of.err != NGX_ENOTDIR
+                && of.err != NGX_ENAMETOOLONG)
+            {
                 ngx_log_error(NGX_LOG_CRIT, r->connection->log, of.err,
                               "%s \"%s\" failed", of.failed, path.data);
             }
@@ -1857,15 +1864,7 @@ ngx_http_gzip_ok(ngx_http_request_t *r)
     ngx_table_elt_t           *e, *d;
     ngx_http_core_loc_conf_t  *clcf;
 
-    if (r->gzip == 1) {
-        return NGX_OK;
-    }
-
-    if (r->gzip == 2) {
-        return NGX_DECLINED;
-    }
-
-    r->gzip = 2;
+    r->gzip_tested = 1;
 
     if (r != r->main
         || r->headers_in.accept_encoding == NULL
@@ -2000,7 +1999,7 @@ ok:
 
 #endif
 
-    r->gzip = 1;
+    r->gzip_ok = 1;
 
     return NGX_OK;
 }
@@ -2862,7 +2861,7 @@ ngx_http_core_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
                               prev->client_header_buffer_size, 1024);
     ngx_conf_merge_bufs_value(conf->large_client_header_buffers,
                               prev->large_client_header_buffers,
-                              4, ngx_pagesize);
+                              4, 8192);
 
     if (conf->large_client_header_buffers.size < conf->connection_pool_size) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,

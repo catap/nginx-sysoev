@@ -24,7 +24,6 @@ typedef struct {
 
     unsigned                     type:8;
     unsigned                     valid_info:1;
-    unsigned                     valid_type:1;
 } ngx_dir_t;
 
 
@@ -142,7 +141,7 @@ ngx_int_t ngx_set_file_time(u_char *name, ngx_fd_t fd, time_t s);
 #define ngx_is_dir(sb)           (S_ISDIR((sb)->st_mode))
 #define ngx_is_file(sb)          (S_ISREG((sb)->st_mode))
 #define ngx_is_link(sb)          (S_ISLNK((sb)->st_mode))
-#define ngx_is_exec(sb)          ((sb)->st_mode & S_IXUSR)
+#define ngx_is_exec(sb)          (((sb)->st_mode & S_IXUSR) == S_IXUSR)
 #define ngx_file_access(sb)      ((sb)->st_mode & 0777)
 #define ngx_file_size(sb)        (sb)->st_size
 #define ngx_file_mtime(sb)       (sb)->st_mtime
@@ -200,31 +199,31 @@ ngx_int_t ngx_read_dir(ngx_dir_t *dir);
 #else
 #define ngx_de_namelen(dir)      ngx_strlen((dir)->de->d_name)
 #endif
-#define ngx_de_info(name, dir)   stat((const char *) name, &(dir)->info)
+
+static ngx_inline ngx_int_t
+ngx_de_info(u_char *name, ngx_dir_t *dir)
+{
+    dir->type = 0;
+    return stat((const char *) name, &dir->info);
+}
+
 #define ngx_de_info_n            "stat()"
 #define ngx_de_link_info(name, dir)  lstat((const char *) name, &(dir)->info)
 #define ngx_de_link_info_n       "lstat()"
 
 #if (NGX_HAVE_D_TYPE)
 
-#if (NGX_LINUX)
-
-/* XFS on Linux does not set dirent.d_type */
+/*
+ * some file systems (e.g. XFS on Linux and CD9660 on FreeBSD)
+ * do not set dirent.d_type
+ */
 
 #define ngx_de_is_dir(dir)                                                   \
     (((dir)->type) ? ((dir)->type == DT_DIR) : (S_ISDIR((dir)->info.st_mode)))
 #define ngx_de_is_file(dir)                                                  \
     (((dir)->type) ? ((dir)->type == DT_REG) : (S_ISREG((dir)->info.st_mode)))
 #define ngx_de_is_link(dir)                                                  \
-    (((dir)->type) ? ((dir)->type == DT_LINK) : (S_ISLNK((dir)->info.st_mode)))
-
-#else
-
-#define ngx_de_is_dir(dir)       ((dir)->type == DT_DIR)
-#define ngx_de_is_file(dir)      ((dir)->type == DT_REG)
-#define ngx_de_is_link(dir)      ((dir)->type == DT_LINK)
-
-#endif /* NGX_LINUX */
+    (((dir)->type) ? ((dir)->type == DT_LNK) : (S_ISLNK((dir)->info.st_mode)))
 
 #else
 
