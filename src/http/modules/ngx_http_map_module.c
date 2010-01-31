@@ -160,7 +160,7 @@ ngx_http_map_create_conf(ngx_conf_t *cf)
 
     mcf = ngx_palloc(cf->pool, sizeof(ngx_http_map_conf_t));
     if (mcf == NULL) {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     mcf->hash_max_size = NGX_CONF_UNSET_UINT;
@@ -337,7 +337,7 @@ ngx_http_map_cmp_dns_wildcards(const void *one, const void *two)
     first = (ngx_hash_key_t *) one;
     second = (ngx_hash_key_t *) two;
 
-    return ngx_strcmp(first->key.data, second->key.data);
+    return ngx_dns_strcmp(first->key.data, second->key.data);
 }
 
 

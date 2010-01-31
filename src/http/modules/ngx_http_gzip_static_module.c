@@ -95,7 +95,15 @@ ngx_http_gzip_static_handler(ngx_http_request_t *r)
 
     gzcf = ngx_http_get_module_loc_conf(r, ngx_http_gzip_static_module);
 
-    if (!gzcf->enable || ngx_http_gzip_ok(r) != NGX_OK) {
+    if (!gzcf->enable) {
+        return NGX_DECLINED;
+    }
+
+    rc = ngx_http_gzip_ok(r);
+
+    clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
+
+    if (!clcf->gzip_vary && rc != NGX_OK) {
         return NGX_DECLINED;
     }
 
@@ -115,8 +123,6 @@ ngx_http_gzip_static_handler(ngx_http_request_t *r)
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, log, 0,
                    "http filename: \"%s\"", path.data);
-
-    clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
 
     ngx_memzero(&of, sizeof(ngx_open_file_info_t));
 
@@ -154,6 +160,12 @@ ngx_http_gzip_static_handler(ngx_http_request_t *r)
         ngx_log_error(level, log, of.err,
                       "%s \"%s\" failed", of.failed, path.data);
 
+        return NGX_DECLINED;
+    }
+
+    r->gzip_vary = 1;
+
+    if (rc != NGX_OK) {
         return NGX_DECLINED;
     }
 
@@ -251,7 +263,7 @@ ngx_http_gzip_static_create_conf(ngx_conf_t *cf)
 
     conf = ngx_palloc(cf->pool, sizeof(ngx_http_gzip_static_conf_t));
     if (conf == NULL) {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     conf->enable = NGX_CONF_UNSET;

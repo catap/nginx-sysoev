@@ -542,8 +542,25 @@ ngx_http_log_request_time(ngx_http_request_t *r, u_char *buf,
 static u_char *
 ngx_http_log_status(ngx_http_request_t *r, u_char *buf, ngx_http_log_op_t *op)
 {
-    return ngx_sprintf(buf, "%ui",
-                       r->err_status ? r->err_status : r->headers_out.status);
+    ngx_uint_t  status;
+
+    if (r->err_status) {
+        status = r->err_status;
+
+    } else if (r->headers_out.status) {
+        status = r->headers_out.status;
+
+    } else if (r->http_version == NGX_HTTP_VERSION_9) {
+        *buf++ = '0';
+        *buf++ = '0';
+        *buf++ = '9';
+        return buf;
+
+    } else {
+        status = 0;
+    }
+
+    return ngx_sprintf(buf, "%ui", status);
 }
 
 
@@ -676,7 +693,7 @@ ngx_http_log_escape(u_char *dst, u_char *src, size_t size)
 
         /* find the number of the characters to be escaped */
 
-        n  = 0;
+        n = 0;
 
         for (i = 0; i < size; i++) {
             if (escape[*src >> 5] & (1 << (*src & 0x1f))) {
@@ -714,18 +731,18 @@ ngx_http_log_create_main_conf(ngx_conf_t *cf)
 
     conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_log_main_conf_t));
     if (conf == NULL) {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     if (ngx_array_init(&conf->formats, cf->pool, 4, sizeof(ngx_http_log_fmt_t))
         != NGX_OK)
     {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     fmt = ngx_array_push(&conf->formats);
     if (fmt == NULL) {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     fmt->name.len = sizeof("combined") - 1;
@@ -735,7 +752,7 @@ ngx_http_log_create_main_conf(ngx_conf_t *cf)
 
     fmt->ops = ngx_array_create(cf->pool, 16, sizeof(ngx_http_log_op_t));
     if (fmt->ops == NULL) {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     return conf;
@@ -749,7 +766,7 @@ ngx_http_log_create_loc_conf(ngx_conf_t *cf)
 
     conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_log_loc_conf_t));
     if (conf == NULL) {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     conf->open_file_cache = NGX_CONF_UNSET_PTR;
@@ -837,7 +854,13 @@ ngx_http_log_set_log(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     if (ngx_strcmp(value[1].data, "off") == 0) {
         llcf->off = 1;
-        return NGX_CONF_OK;
+        if (cf->args->nelts == 2) {
+            return NGX_CONF_OK;
+        }
+
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "invalid parameter \"%V\"", &value[2]);
+        return NGX_CONF_ERROR;
     }
 
     if (llcf->logs == NULL) {

@@ -561,7 +561,7 @@ ngx_http_script_add_code(ngx_array_t *codes, size_t size, void *code)
 
     new = ngx_array_push_n(codes, size);
     if (new == NULL) {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     if (code) {
@@ -1417,7 +1417,10 @@ ngx_http_script_file_code(ngx_http_script_engine_t *e)
     if (ngx_open_cached_file(clcf->open_file_cache, &path, &of, r->pool)
         != NGX_OK)
     {
-        if (of.err != NGX_ENOENT && of.err != NGX_ENOTDIR) {
+        if (of.err != NGX_ENOENT
+            && of.err != NGX_ENOTDIR
+            && of.err != NGX_ENAMETOOLONG)
+        {
             ngx_log_error(NGX_LOG_CRIT, r->connection->log, of.err,
                           "%s \"%s\" failed", of.failed, value->data);
         }

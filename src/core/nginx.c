@@ -239,6 +239,13 @@ main(int argc, char *const *argv)
 #ifdef NGX_COMPILER
             ngx_log_stderr(0, "built by " NGX_COMPILER);
 #endif
+#if (NGX_SSL)
+#ifdef SSL_CTRL_SET_TLSEXT_HOSTNAME
+            ngx_log_stderr(0, "TLS SNI support enabled");
+#else
+            ngx_log_stderr(0, "TLS SNI support disabled");
+#endif
+#endif
             ngx_log_stderr(0, "configure arguments:" NGX_CONFIGURE);
         }
 
@@ -370,6 +377,13 @@ main(int argc, char *const *argv)
             ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
                           ngx_set_stderr_n " failed");
             return 1;
+        }
+    }
+
+    if (log->file->fd != ngx_stderr) {
+        if (ngx_close_file(log->file->fd) == NGX_FILE_ERROR) {
+            ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
+                          ngx_close_file_n " built-in log failed");
         }
     }
 

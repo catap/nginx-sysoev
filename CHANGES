@@ -1,4 +1,221 @@
 
+Changes with nginx 0.7.65                                        01 Feb 2010
+
+    *) Security: now nginx/Windows ignores trailing spaces in URI.
+       Thanks to Dan Crowley, Core Security Technologies.
+
+    *) Security: now nginx/Windows ignores short files names.
+       Thanks to Dan Crowley, Core Security Technologies.
+
+    *) Change: now the "009" status code is written to an access log for
+       proxied HTTP/0.9 responses.
+
+    *) Change: now the default buffer size of the
+       "large_client_header_buffers" directive is 8K.
+       Thanks to Andrew Cholakian.
+
+    *) Change: now default SSL ciphers are "HIGH:!ADH:!MD5".
+
+    *) Change: now SSLv2 protocol is disabled by default.
+
+    *) Change: now $host variable value is always low case.
+
+    *) Feature: the conf/fastcgi.conf for simple FastCGI configurations.
+
+    *) Feature: now URI part is not required a "proxy_pass" directive if
+       variables are used.
+
+    *) Feature: the $ssl_session_id variable.
+
+    *) Bugfix: if a proxied or FastCGI request was internally redirected to
+       another proxied or FastCGI location, then $upstream_response_time
+       variable may have abnormally large value; the bug had appeared in
+       0.7.63.
+
+    *) Bugfix: if the "expires modified" set date in the past, then a
+       negative number was set in the "Cache-Control" response header
+       line.
+       Thanks to Alex Kapranoff.
+
+    *) Bugfix: nginx closed a connection if a cached response had an empty
+       body.
+       Thanks to Piotr Sikora.
+
+    *) Bugfix: nginx cached a 304 response if there was the "If-None-Match"
+       header line in a proxied request.
+       Thanks to Tim Dettrick and David Kostal.
+
+    *) Bugfix: nginx did not treat a comma as separator in the
+       "Cache-Control" backend response header line.
+
+    *) Bugfix: cached HTTP/0.9 responses were handled incorrectly.
+
+    *) Bugfix: nginx sent gzipped responses to clients those do not support
+       gzip, if "gzip_static on" and "gzip_vary off"; the bug had appeared
+       in 0.8.16.
+
+    *) Bugfix: nginx always added "Content-Encoding: gzip" response header
+       line in 304 responses sent by ngx_http_gzip_static_module.
+
+    *) Bugfix: the "!-x" operator did not work.
+       Thanks to Maxim Dounin.
+
+    *) Bugfix: a segmentation fault might occur in a worker process, if
+       limit_rate was used in HTTPS server.
+       Thanks to Maxim Dounin.
+
+    *) Bugfix: a segmentation fault might occur in a worker process while
+       $limit_rate logging.
+       Thanks to Maxim Dounin.
+
+    *) Bugfix: nginx did not support dates in 2038 year on 32-bit platforms;
+
+    *) Bugfix: nginx/Windows tried to delete a temporary file twice if the
+       file should replace an already existent file.
+
+    *) Bugfix: nginx/Windows tried to rename a temporary file twice if the
+       file should replace an already existent file.
+
+    *) Bugfix: nginx/Windows might not create temporary file, a cache file,
+       or "proxy/fastcgi_store"d file if a worker had no enough access
+       rights for top level directories.
+
+    *) Bugfix: in UTF-8 encoding support by "try_files" directive in
+       nginx/Windows.
+
+    *) Bugfix: UTF-8 encoding usage in the ngx_http_autoindex_module.
+       Thanks to Maxim Dounin.
+
+    *) Bugfix: the ngx_http_autoindex_module did not show the trailing
+       slash in links to a directory; the bug had appeared in 0.7.15.
+
+    *) Bugfix: nginx did not close a log file set by the --error-log-path
+       configuration option; the bug had appeared in 0.7.53.
+
+    *) Bugfix: "addition_types" directive was incorrectly named
+       "addtion_types".
+
+    *) Bugfix: invalid request line in $request variable was written in
+       access_log only if error_log was set to "info" or "debug" level.
+
+
+Changes with nginx 0.7.64                                        16 Nov 2009
+
+    *) Security: now SSL/TLS renegotiation is disabled.
+       Thanks to Maxim Dounin.
+
+    *) Bugfix: nginx sent gzipped responses to clients those do not support
+       gzip, if "gzip_static on" and "gzip_vary off"; the bug had appeared
+       in 0.7.63.
+
+    *) Bugfix: if names .domain.tld, .sub.domain.tld, and .domain-some.tld
+       were defined, then the name .sub.domain.tld was matched by
+       .domain.tld.
+
+    *) Bugfix: segmentation fault and infinite looping in resolver.
+
+    *) Bugfix: in resolver.
+       Thanks to Artem Bokhan.
+
+    *) Bugfix: resolver cache poisoning.
+       Thanks to Matthew Dempsky.
+
+    *) Bugfix: memory leak in resolver.
+       Thanks to Matthew Dempsky.
+
+
+Changes with nginx 0.7.63                                        26 Oct 2009
+
+    *) Security: now "/../" are disabled in "Destination" request header
+       line.
+
+    *) Change: minimum supported OpenSSL version is 0.9.7.
+
+    *) Change: the "ask" parameter of the "ssl_verify_client" directive was
+       changed to the "optional" parameter and now it checks a client
+       certificate if it was offered.
+       Thanks to Brice Figureau.
+
+    *) Feature: now the "-V" switch shows TLS SNI support.
+
+    *) Feature: the $ssl_client_verify variable.
+       Thanks to Brice Figureau.
+
+    *) Feature: the "ssl_crl" directive.
+       Thanks to Brice Figureau.
+
+    *) Bugfix: the $ssl_client_cert variable usage corrupted memory; the
+       bug had appeared in 0.7.7.
+       Thanks to Sergey Zhuravlev.
+
+    *) Feature: now the start cache loader runs in a separate process; this
+       should improve large caches handling.
+
+    *) Feature: now temporary files and permanent storage area may reside
+       at different file systems.
+
+    *) Bugfix: nginx counted incorrectly disk cache size.
+
+    *) Change: now directive "gzip_disable msie6" does not disable gzipping
+       for MSIE 6.0 SV1.
+
+    *) Bugfix: nginx always added "Vary: Accept-Encoding" response header
+       line, if both "gzip_static" and "gzip_vary" were on.
+
+    *) Feature: the "proxy" parameter of the "geo" directive.
+
+    *) Feature: the ngx_http_geoip_module.
+
+    *) Feature: the "limit_rate_after" directive.
+       Thanks to Ivan Debnar.
+
+    *) Feature: the "limit_req_log_level" and "limit_conn_log_level"
+       directives.
+
+    *) Bugfix: now "limit_req" directive conforms to the leaky bucket
+       algorithm.
+       Thanks to Maxim Dounin.
+
+    *) Bugfix: in ngx_http_limit_req_module.
+       Thanks to Maxim Dounin.
+
+    *) Bugfix: now nginx allows underscores in a request method.
+
+    *) Bugfix: "proxy_pass_header" and "fastcgi_pass_header" directives did
+       not pass to a client the "X-Accel-Redirect", "X-Accel-Limit-Rate",
+       "X-Accel-Buffering", and "X-Accel-Charset" lines from backend
+       response header.
+       Thanks to Maxim Dounin.
+
+    *) Bugfix: in handling "Last-Modified" and "Accept-Ranges" backend
+       response header lines; the bug had appeared in 0.7.44.
+       Thanks to Maxim Dounin.
+
+    *) Feature: the "image_filter_transparency" directive.
+
+    *) Feature: the "image_filter" directive supports variables for setting
+       size.
+
+    *) Bugfix: in PNG alpha-channel support in the
+       ngx_http_image_filter_module.
+
+    *) Bugfix: in transparency support in the ngx_http_image_filter_module.
+
+    *) Feature: now several "perl_modules" directives may be used.
+
+    *) Bugfix: ngx_http_perl_module responses did not work in subrequests.
+
+    *) Bugfix: nginx sent '\0' in a "Location" response header line on
+       MKCOL request.
+       Thanks to Xie Zhenye.
+
+    *) Bugfix: an "error_page" directive did not redirect a 413 error; the
+       bug had appeared in 0.6.10.
+
+    *) Bugfix: in memory allocation error handling.
+       Thanks to Maxim Dounin and Kirill A. Korinskiy.
+
+
 Changes with nginx 0.7.62                                        14 Sep 2009
 
     *) Security: a segmentation fault might occur in worker process while

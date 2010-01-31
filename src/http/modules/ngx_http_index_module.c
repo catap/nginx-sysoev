@@ -222,7 +222,10 @@ ngx_http_index_handler(ngx_http_request_t *r)
                 return NGX_HTTP_INTERNAL_SERVER_ERROR;
             }
 
-            if (of.err == NGX_ENOTDIR || of.err == NGX_EACCES) {
+            if (of.err == NGX_ENOTDIR
+                || of.err == NGX_ENAMETOOLONG
+                || of.err == NGX_EACCES)
+            {
                 return ngx_http_index_error(r, clcf, path.data, of.err);
             }
 
@@ -366,7 +369,7 @@ ngx_http_index_create_loc_conf(ngx_conf_t *cf)
 
     conf = ngx_palloc(cf->pool, sizeof(ngx_http_index_loc_conf_t));
     if (conf == NULL) {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     conf->indices = NULL;

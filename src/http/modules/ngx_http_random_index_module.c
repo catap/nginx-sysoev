@@ -175,7 +175,7 @@ ngx_http_random_index_handler(ngx_http_request_t *r)
 
         len = ngx_de_namelen(&dir);
 
-        if (!dir.valid_type) {
+        if (dir.type == 0 || ngx_de_is_link(&dir)) {
 
             /* 1 byte for '/' and 1 byte for terminating '\0' */
 
@@ -280,7 +280,7 @@ ngx_http_random_index_create_loc_conf(ngx_conf_t *cf)
 
     conf = ngx_palloc(cf->pool, sizeof(ngx_http_random_index_loc_conf_t));
     if (conf == NULL) {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     conf->enable = NGX_CONF_UNSET;

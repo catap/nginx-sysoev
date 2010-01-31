@@ -31,7 +31,8 @@ static ngx_int_t ngx_http_process_cookie(ngx_http_request_t *r,
 
 static ngx_int_t ngx_http_process_request_header(ngx_http_request_t *r);
 static void ngx_http_process_request(ngx_http_request_t *r);
-static ssize_t ngx_http_validate_host(u_char *host, size_t len);
+static ssize_t ngx_http_validate_host(ngx_http_request_t *r, u_char **host,
+    size_t len, ngx_uint_t alloc);
 static ngx_int_t ngx_http_find_virtual_server(ngx_http_request_t *r,
     u_char *host, size_t len);
 
@@ -129,7 +130,7 @@ ngx_http_header_t  ngx_http_headers_in[] = {
     { ngx_string("Keep-Alive"), offsetof(ngx_http_headers_in_t, keep_alive),
                  ngx_http_process_header_line },
 
-#if (NGX_HTTP_PROXY || NGX_HTTP_REALIP)
+#if (NGX_HTTP_PROXY || NGX_HTTP_REALIP || NGX_HTTP_GEO)
     { ngx_string("X-Forwarded-For"),
                  offsetof(ngx_http_headers_in_t, x_forwarded_for),
                  ngx_http_process_header_line },
@@ -384,6 +385,7 @@ ngx_http_init_request(ngx_event_t *rev)
     r->loc_conf = cscf->ctx->loc_conf;
 
     rev->handler = ngx_http_process_request_line;
+    r->read_event_handler = ngx_http_block_reading;
 
 #if (NGX_HTTP_SSL)
 
@@ -451,13 +453,15 @@ ngx_http_init_request(ngx_event_t *rev)
                       sizeof(ngx_table_elt_t))
         != NGX_OK)
     {
-        ngx_http_close_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+        ngx_destroy_pool(r->pool);
+        ngx_http_close_connection(c);
         return;
     }
 
     r->ctx = ngx_pcalloc(r->pool, sizeof(void *) * ngx_http_max_module);
     if (r->ctx == NULL) {
-        ngx_http_close_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+        ngx_destroy_pool(r->pool);
+        ngx_http_close_connection(c);
         return;
     }
 
@@ -466,7 +470,8 @@ ngx_http_init_request(ngx_event_t *rev)
     r->variables = ngx_pcalloc(r->pool, cmcf->variables.nelts
                                         * sizeof(ngx_http_variable_value_t));
     if (r->variables == NULL) {
-        ngx_http_close_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+        ngx_destroy_pool(r->pool);
+        ngx_http_close_connection(c);
         return;
     }
 
@@ -619,6 +624,7 @@ int
 ngx_http_ssl_servername(ngx_ssl_conn_t *ssl_conn, int *ad, void *arg)
 {
     size_t                    len;
+    u_char                   *host;
     const char               *servername;
     ngx_connection_t         *c;
     ngx_http_request_t       *r;
@@ -643,7 +649,15 @@ ngx_http_ssl_servername(ngx_ssl_conn_t *ssl_conn, int *ad, void *arg)
 
     r = c->data;
 
-    if (ngx_http_find_virtual_server(r, (u_char *) servername, len) != NGX_OK) {
+    host = (u_char *) servername;
+
+    len = ngx_http_validate_host(r, &host, len, 1);
+
+    if (len <= 0) {
+        return SSL_TLSEXT_ERR_NOACK;
+    }
+
+    if (ngx_http_find_virtual_server(r, host, len) != NGX_OK) {
         return SSL_TLSEXT_ERR_NOACK;
     }
 
@@ -662,6 +676,7 @@ ngx_http_ssl_servername(ngx_ssl_conn_t *ssl_conn, int *ad, void *arg)
 static void
 ngx_http_process_request_line(ngx_event_t *rev)
 {
+    u_char                    *host;
     ssize_t                    n;
     ngx_int_t                  rc, rv;
     ngx_connection_t          *c;
@@ -769,9 +784,11 @@ ngx_http_process_request_line(ngx_event_t *rev)
 
             p = r->uri.data + r->uri.len - 1;
 
-            if (*p == '.') {
+            if (*p == '.' || *p == ' ') {
 
-                while (--p > r->uri.data && *p == '.') { /* void */ }
+                while (--p > r->uri.data && (*p == '.' || *p == ' ')) {
+                    /* void */
+                }
 
                 r->uri.len = p + 1 - r->uri.data;
 
@@ -793,18 +810,25 @@ ngx_http_process_request_line(ngx_event_t *rev)
                            "http exten: \"%V\"", &r->exten);
 
             if (r->host_start && r->host_end) {
-                n = ngx_http_validate_host(r->host_start,
-                                           r->host_end - r->host_start);
 
-                if (n <= 0) {
+                host = r->host_start;
+                n = ngx_http_validate_host(r, &host,
+                                           r->host_end - r->host_start, 0);
+
+                if (n == 0) {
                     ngx_log_error(NGX_LOG_INFO, c->log, 0,
                                   "client sent invalid host in request line");
                     ngx_http_finalize_request(r, NGX_HTTP_BAD_REQUEST);
                     return;
                 }
 
+                if (n < 0) {
+                    ngx_http_close_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+                    return;
+                }
+
                 r->headers_in.server.len = n;
-                r->headers_in.server.data = r->host_start;
+                r->headers_in.server.data = host;
             }
 
             if (r->http_version < NGX_HTTP_VERSION_10) {
@@ -928,8 +952,16 @@ ngx_http_process_request_headers(ngx_event_t *rev)
                 }
 
                 if (rv == NGX_DECLINED) {
-                    len = r->header_in->end - r->header_name_start;
                     p = r->header_name_start;
+
+                    if (p == NULL) {
+                        ngx_log_error(NGX_LOG_INFO, c->log, 0,
+                                      "client sent too large request");
+                        ngx_http_finalize_request(r, NGX_HTTP_BAD_REQUEST);
+                        return;
+                    }
+
+                    len = r->header_in->end - p;
 
                     if (len > NGX_MAX_ERROR_STR - 300) {
                         len = NGX_MAX_ERROR_STR - 300;
@@ -1304,18 +1336,25 @@ static ngx_int_t
 ngx_http_process_host(ngx_http_request_t *r, ngx_table_elt_t *h,
     ngx_uint_t offset)
 {
-    ssize_t  len;
+    u_char   *host;
+    ssize_t   len;
 
     if (r->headers_in.host == NULL) {
         r->headers_in.host = h;
     }
 
-    len = ngx_http_validate_host(h->value.data, h->value.len);
+    host = h->value.data;
+    len = ngx_http_validate_host(r, &host, h->value.len, 0);
 
-    if (len <= 0) {
+    if (len == 0) {
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
                       "client sent invalid host header");
         ngx_http_finalize_request(r, NGX_HTTP_BAD_REQUEST);
+        return NGX_ERROR;
+    }
+
+    if (len < 0) {
+        ngx_http_close_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return NGX_ERROR;
     }
 
@@ -1324,7 +1363,7 @@ ngx_http_process_host(ngx_http_request_t *r, ngx_table_elt_t *h,
     }
 
     r->headers_in.server.len = len;
-    r->headers_in.server.data = h->value.data;
+    r->headers_in.server.data = host;
 
     return NGX_OK;
 }
@@ -1374,8 +1413,13 @@ ngx_http_process_user_agent(ngx_http_request_t *r, ngx_table_elt_t *h,
                 r->headers_in.msie4 = 1;
                 /* fall through */
             case '5':
-            case '6':
                 r->headers_in.msie6 = 1;
+                break;
+            case '6':
+                if (ngx_strstrn(msie + 8, "SV1", 3 - 1) == NULL) {
+                    r->headers_in.msie6 = 1;
+                }
+                break;
             }
         }
 
@@ -1517,7 +1561,7 @@ ngx_http_process_request(ngx_http_request_t *r)
 
         sscf = ngx_http_get_module_srv_conf(r, ngx_http_ssl_module);
 
-        if (sscf->verify == 1) {
+        if (sscf->verify) {
             rc = SSL_get_verify_result(c->ssl->connection);
 
             if (rc != X509_V_OK) {
@@ -1532,20 +1576,22 @@ ngx_http_process_request(ngx_http_request_t *r)
                 return;
             }
 
-            cert = SSL_get_peer_certificate(c->ssl->connection);
+            if (sscf->verify == 1) {
+                cert = SSL_get_peer_certificate(c->ssl->connection);
 
-            if (cert == NULL) {
-                ngx_log_error(NGX_LOG_INFO, c->log, 0,
-                              "client sent no required SSL certificate");
+                if (cert == NULL) {
+                    ngx_log_error(NGX_LOG_INFO, c->log, 0,
+                                  "client sent no required SSL certificate");
 
-                ngx_ssl_remove_cached_session(sscf->ssl.ctx,
+                    ngx_ssl_remove_cached_session(sscf->ssl.ctx,
                                        (SSL_get0_session(c->ssl->connection)));
 
-                ngx_http_finalize_request(r, NGX_HTTPS_NO_CERT);
-                return;
-            }
+                    ngx_http_finalize_request(r, NGX_HTTPS_NO_CERT);
+                    return;
+                }
 
-            X509_free(cert);
+                X509_free(cert);
+            }
         }
     }
 
@@ -1573,21 +1619,23 @@ ngx_http_process_request(ngx_http_request_t *r)
 
 
 static ssize_t
-ngx_http_validate_host(u_char *host, size_t len)
+ngx_http_validate_host(ngx_http_request_t *r, u_char **host, size_t len,
+    ngx_uint_t alloc)
 {
-    u_char      ch;
-    size_t      i, last;
-    ngx_uint_t  dot;
+    u_char      *h, ch;
+    size_t       i, last;
+    ngx_uint_t   dot;
 
     last = len;
+    h = *host;
     dot = 0;
 
     for (i = 0; i < len; i++) {
-        ch = host[i];
+        ch = h[i];
 
         if (ch == '.') {
             if (dot) {
-                return -1;
+                return 0;
             }
 
             dot = 1;
@@ -1602,12 +1650,25 @@ ngx_http_validate_host(u_char *host, size_t len)
         }
 
         if (ngx_path_separator(ch) || ch == '\0') {
-            return -1;
+            return 0;
+        }
+
+        if (ch >= 'A' || ch < 'Z') {
+            alloc = 1;
         }
     }
 
     if (dot) {
         last--;
+    }
+
+    if (alloc) {
+        *host = ngx_pnalloc(r->pool, last) ;
+        if (*host == NULL) {
+            return -1;
+        }
+
+        ngx_strlow(*host, h, last);
     }
 
     return last;
@@ -1617,29 +1678,15 @@ ngx_http_validate_host(u_char *host, size_t len)
 static ngx_int_t
 ngx_http_find_virtual_server(ngx_http_request_t *r, u_char *host, size_t len)
 {
-    u_char                    *server;
-    ngx_uint_t                 hash;
     ngx_http_core_loc_conf_t  *clcf;
     ngx_http_core_srv_conf_t  *cscf;
-    u_char                     buf[32];
 
     if (r->virtual_names == NULL) {
         return NGX_DECLINED;
     }
 
-    if (len <= 32) {
-        server = buf;
-
-    } else {
-        server = ngx_pnalloc(r->pool, len);
-        if (server == NULL) {
-            return NGX_ERROR;
-        }
-    }
-
-    hash = ngx_hash_strlow(server, host, len);
-
-    cscf = ngx_hash_find_combined(&r->virtual_names->names, hash, server, len);
+    cscf = ngx_hash_find_combined(&r->virtual_names->names,
+                                  ngx_hash_key(host, len), host, len);
 
     if (cscf) {
         goto found;
@@ -1647,7 +1694,7 @@ ngx_http_find_virtual_server(ngx_http_request_t *r, u_char *host, size_t len)
 
 #if (NGX_PCRE)
 
-    if (r->virtual_names->nregex) {
+    if (len && r->virtual_names->nregex) {
         size_t                   ncaptures;
         ngx_int_t                n;
         ngx_uint_t               i;
@@ -1655,7 +1702,7 @@ ngx_http_find_virtual_server(ngx_http_request_t *r, u_char *host, size_t len)
         ngx_http_server_name_t  *sn;
 
         name.len = len;
-        name.data = server;
+        name.data = host;
 
         ncaptures = 0;
 
@@ -1670,16 +1717,6 @@ ngx_http_find_virtual_server(ngx_http_request_t *r, u_char *host, size_t len)
                 r->captures = ngx_palloc(r->pool, ncaptures * sizeof(int));
                 if (r->captures == NULL) {
                     return NGX_ERROR;
-                }
-
-                if (server == buf) {
-                    server = ngx_pnalloc(r->pool, len);
-                    if (server == NULL) {
-                        return NGX_ERROR;
-                    }
-
-                    ngx_memcpy(server, buf, len);
-                    name.data = server;
                 }
             }
 
@@ -1702,7 +1739,7 @@ ngx_http_find_virtual_server(ngx_http_request_t *r, u_char *host, size_t len)
             cscf = sn[i].core_srv_conf;
 
             r->ncaptures = ncaptures;
-            r->captures_data = server;
+            r->captures_data = host;
 
             goto found;
         }
@@ -2703,7 +2740,14 @@ ngx_http_send_special(ngx_http_request_t *r, ngx_uint_t flags)
     }
 
     if (flags & NGX_HTTP_LAST) {
-        b->last_buf = 1;
+
+        if (r == r->main && !r->post_action) {
+            b->last_buf = 1;
+
+        } else {
+            b->sync = 1;
+            b->last_in_chain = 1;
+        }
     }
 
     if (flags & NGX_HTTP_FLUSH) {

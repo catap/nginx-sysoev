@@ -404,7 +404,7 @@ ngx_http_xslt_add_chunk(ngx_http_request_t *r, ngx_http_xslt_filter_ctx_t *ctx,
         sax->endElementNs = ngx_http_xslt_sax_end_element;
 
         sax->characters = ngx_http_xslt_sax_characters;
-        sax->ignorableWhitespace  = ngx_http_xslt_sax_characters;
+        sax->ignorableWhitespace = ngx_http_xslt_sax_characters;
         sax->cdataBlock = ngx_http_xslt_sax_cdata_block;
         sax->getEntity = ngx_http_xslt_sax_get_entity;
         sax->resolveEntity = ngx_http_xslt_sax_resolve_entity;
@@ -1172,7 +1172,7 @@ ngx_http_xslt_filter_create_main_conf(ngx_conf_t *cf)
 
     conf = ngx_palloc(cf->pool, sizeof(ngx_http_xslt_filter_main_conf_t));
     if (conf == NULL) {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     if (ngx_array_init(&conf->dtd_files, cf->pool, 1,
@@ -1200,7 +1200,7 @@ ngx_http_xslt_filter_create_conf(ngx_conf_t *cf)
 
     conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_xslt_filter_loc_conf_t));
     if (conf == NULL) {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     /*
