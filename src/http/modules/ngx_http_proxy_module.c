@@ -357,6 +357,13 @@ static ngx_command_t  ngx_http_proxy_commands[] = {
       0,
       &ngx_http_proxy_module },
 
+    { ngx_string("proxy_no_cache"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_1MORE,
+      ngx_http_no_cache_set_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_proxy_loc_conf_t, upstream.no_cache),
+      NULL },
+
     { ngx_string("proxy_cache_valid"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_1MORE,
       ngx_http_file_cache_valid_set_slot,
@@ -630,6 +637,7 @@ ngx_http_proxy_handler(ngx_http_request_t *r)
     u->process_header = ngx_http_proxy_process_status_line;
     u->abort_request = ngx_http_proxy_abort_request;
     u->finalize_request = ngx_http_proxy_finalize_request;
+    r->state = 0;
 
     if (plcf->redirects) {
         u->rewrite_redirect = ngx_http_proxy_rewrite_redirect;
@@ -1191,6 +1199,7 @@ ngx_http_proxy_reinit_request(ngx_http_request_t *r)
     ctx->status_end = NULL;
 
     r->upstream->process_header = ngx_http_proxy_process_status_line;
+    r->state = 0;
 
     return NGX_OK;
 }
@@ -1906,7 +1915,7 @@ ngx_http_proxy_create_loc_conf(ngx_conf_t *cf)
      *     conf->body_set_len = NULL;
      *     conf->body_set = NULL;
      *     conf->body_source = { 0, NULL };
-     *     conf->rewrite_locations = NULL;
+     *     conf->redirects = NULL;
      */
 
     conf->upstream.store = NGX_CONF_UNSET;
@@ -1931,6 +1940,7 @@ ngx_http_proxy_create_loc_conf(ngx_conf_t *cf)
 #if (NGX_HTTP_CACHE)
     conf->upstream.cache = NGX_CONF_UNSET_PTR;
     conf->upstream.cache_min_uses = NGX_CONF_UNSET_UINT;
+    conf->upstream.no_cache = NGX_CONF_UNSET_PTR;
     conf->upstream.cache_valid = NGX_CONF_UNSET_PTR;
 #endif
 
@@ -2154,6 +2164,9 @@ ngx_http_proxy_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
         conf->upstream.cache_use_stale = NGX_CONF_BITMASK_SET
                                          |NGX_HTTP_UPSTREAM_FT_OFF;
     }
+
+    ngx_conf_merge_ptr_value(conf->upstream.no_cache,
+                             prev->upstream.no_cache, NULL);
 
     ngx_conf_merge_ptr_value(conf->upstream.cache_valid,
                              prev->upstream.cache_valid, NULL);
@@ -2747,9 +2760,16 @@ ngx_http_proxy_redirect(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
     if (ngx_strcmp(value[1].data, "default") == 0) {
+        if (plcf->proxy_lengths) {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "\"proxy_redirect default\" may not be used "
+                               "with \"proxy_pass\" directive with variables");
+            return NGX_CONF_ERROR;
+        }
+
         if (plcf->url.data == NULL) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                               "\"proxy_rewrite_location default\" must go "
+                               "\"proxy_redirect default\" must go "
                                "after the \"proxy_pass\" directive");
             return NGX_CONF_ERROR;
         }

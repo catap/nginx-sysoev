@@ -560,6 +560,13 @@ static ngx_command_t  ngx_http_core_commands[] = {
       offsetof(ngx_http_core_loc_conf_t, if_modified_since),
       &ngx_http_core_if_modified_since },
 
+    { ngx_string("chunked_transfer_encoding"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+      ngx_conf_set_flag_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_core_loc_conf_t, chunked_transfer_encoding),
+      NULL },
+
     { ngx_string("error_page"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF
                         |NGX_CONF_2MORE,
@@ -744,14 +751,24 @@ ngx_http_handler(ngx_http_request_t *r)
             break;
         }
 
-        if (r->keepalive && r->headers_in.msie && r->method == NGX_HTTP_POST) {
+        if (r->keepalive) {
 
-            /*
-             * MSIE may wait for some time if an response for
-             * a POST request was sent over a keepalive connection
-             */
+            if (r->headers_in.msie6) {
+                if (r->method == NGX_HTTP_POST) {
+                    /*
+                     * MSIE may wait for some time if an response for
+                     * a POST request was sent over a keepalive connection
+                     */
+                    r->keepalive = 0;
+                }
 
-            r->keepalive = 0;
+            } else if (r->headers_in.safari) {
+                /*
+                 * Safari may send a POST request to a closed keepalive
+                 * connection and stalls for some time
+                 */
+                r->keepalive = 0;
+            }
         }
 
         if (r->headers_in.content_length_n > 0) {
@@ -1288,7 +1305,7 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
 
     /* no content handler was found */
 
-    if (r->uri.data[r->uri.len - 1] == '/' && !r->zero_in_uri) {
+    if (r->uri.data[r->uri.len - 1] == '/') {
 
         if (ngx_http_map_uri_to_path(r, &path, &root, 0) != NULL) {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
@@ -2076,7 +2093,6 @@ ngx_http_subrequest(ngx_http_request_t *r,
     ngx_log_debug2(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http subrequest \"%V?%V\"", uri, &sr->args);
 
-    sr->zero_in_uri = (flags & NGX_HTTP_ZERO_IN_URI) != 0;
     sr->subrequest_in_memory = (flags & NGX_HTTP_SUBREQUEST_IN_MEMORY) != 0;
     sr->waited = (flags & NGX_HTTP_SUBREQUEST_WAITED) != 0;
 
@@ -2944,6 +2960,7 @@ ngx_http_core_create_loc_conf(ngx_conf_t *cf)
     lcf->log_subrequest = NGX_CONF_UNSET;
     lcf->recursive_error_pages = NGX_CONF_UNSET;
     lcf->server_tokens = NGX_CONF_UNSET;
+    lcf->chunked_transfer_encoding = NGX_CONF_UNSET;
     lcf->types_hash_max_size = NGX_CONF_UNSET_UINT;
     lcf->types_hash_bucket_size = NGX_CONF_UNSET_UINT;
 
@@ -3181,6 +3198,8 @@ ngx_http_core_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_value(conf->recursive_error_pages,
                               prev->recursive_error_pages, 0);
     ngx_conf_merge_value(conf->server_tokens, prev->server_tokens, 1);
+    ngx_conf_merge_value(conf->chunked_transfer_encoding,
+                              prev->chunked_transfer_encoding, 1);
 
     ngx_conf_merge_ptr_value(conf->open_file_cache,
                               prev->open_file_cache, NULL);

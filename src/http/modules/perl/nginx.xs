@@ -847,7 +847,7 @@ variable(r, name, value = NULL)
 
     #endif
 
-    vv = ngx_http_get_variable(r, &var, hash, 1);
+    vv = ngx_http_get_variable(r, &var, hash);
     if (vv == NULL) {
         XSRETURN_UNDEF;
     }
@@ -900,9 +900,6 @@ variable(r, name, value = NULL)
 
             XSRETURN_UNDEF;
         }
-
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                      "variable \"%V\" not found", &var);
 
         XSRETURN_UNDEF;
     }

@@ -363,8 +363,6 @@ ngx_http_upstream_create(ngx_http_request_t *r)
 
     if (u && u->cleanup) {
         ngx_http_upstream_cleanup(r);
-        *u->cleanup = NULL;
-        u->cleanup = NULL;
     }
 
     u = ngx_pcalloc(r->pool, sizeof(ngx_http_upstream_t));
@@ -586,6 +584,13 @@ ngx_http_upstream_cache(ngx_http_request_t *r, ngx_http_upstream_t *u)
 {
     ngx_int_t          rc;
     ngx_http_cache_t  *c;
+
+    if (u->conf->no_cache) {
+        rc = ngx_http_cache(r, u->conf->no_cache);
+        if (rc != NGX_OK) {
+            return rc;
+        }
+    }
 
     if (!(r->method & u->conf->cache_methods)) {
         return NGX_DECLINED;
@@ -1773,10 +1778,6 @@ ngx_http_upstream_process_headers(ngx_http_request_t *r, ngx_http_upstream_t *u)
         if (ngx_http_parse_unsafe_uri(r, uri, &args, &flags) != NGX_OK) {
             ngx_http_finalize_request(r, NGX_HTTP_NOT_FOUND);
             return NGX_DONE;
-        }
-
-        if (flags & NGX_HTTP_ZERO_IN_URI) {
-            r->zero_in_uri = 1;
         }
 
         if (r->method != NGX_HTTP_HEAD) {
@@ -3004,16 +3005,18 @@ ngx_http_upstream_process_cache_control(ngx_http_request_t *r,
         return NGX_OK;
     }
 
-    last = h->value.data + h->value.len;
+    p = h->value.data;
+    last = p + h->value.len;
 
-    if (ngx_strlcasestrn(h->value.data, last, (u_char *) "no-cache", 8 - 1)
-        != NULL)
+    if (ngx_strlcasestrn(p, last, (u_char *) "no-cache", 8 - 1) != NULL
+        || ngx_strlcasestrn(p, last, (u_char *) "no-store", 8 - 1) != NULL
+        || ngx_strlcasestrn(p, last, (u_char *) "private", 7 - 1) != NULL)
     {
         u->cacheable = 0;
         return NGX_OK;
     }
 
-    p = ngx_strlcasestrn(h->value.data, last, (u_char *) "max-age=", 8 - 1);
+    p = ngx_strlcasestrn(p, last, (u_char *) "max-age=", 8 - 1);
 
     if (p == NULL) {
         return NGX_OK;
