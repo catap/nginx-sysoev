@@ -1,4 +1,18 @@
 
+Changes with nginx 0.8.54                                        14 Dec 2010
+
+    *) Bugfix: if there was a single server for given IPv6 address:port
+       pair, then captures in regular expressions in a "server_name"
+       directive did not work.
+
+    *) Bugfix: a segmentation fault might occur in a worker process, if the
+       "auth_basic" directive was used.
+       Thanks to Michail Laletin.
+
+    *) Bugfix: compatibility with ngx_http_eval_module; the bug had
+       appeared in 0.8.42.
+
+
 Changes with nginx 0.8.53                                        18 Oct 2010
 
     *) Feature: now the "error_page" directive allows to change a status
@@ -1204,7 +1218,7 @@ Changes with nginx 0.7.44                                        23 Mar 2009
 
     *) Bugfix: the "try_files" directive might test incorrectly directories.
 
-    *) Bugfix: if there is the single server for given address:port pair,
+    *) Bugfix: if there was a single server for given address:port pair,
        then captures in regular expressions in a "server_name" directive
        did not work.
 
@@ -1558,7 +1572,7 @@ Changes with nginx 0.7.18                                        13 Oct 2008
     *) Bugfix: the "http_503" parameter of the "proxy_next_upstream" or 
        "fastcgi_next_upstream" directives did not work.
 
-    *) Bugfix: nginx might send a "Transfer-Encoding: chunked" heaer line 
+    *) Bugfix: nginx might send a "Transfer-Encoding: chunked" header line
        for HEAD requests.
 
     *) Bugfix: now accept threshold depends on worker_connections.
