@@ -551,7 +551,7 @@ ngx_http_ssl_handshake(ngx_event_t *rev)
     }
 
     if (n == 1) {
-        if (buf[0] == 0x80 /* SSLv2 */ || buf[0] == 0x16 /* SSLv3/TLSv1 */) {
+        if (buf[0] & 0x80 /* SSLv2 */ || buf[0] == 0x16 /* SSLv3/TLSv1 */) {
             ngx_log_debug1(NGX_LOG_DEBUG_HTTP, rev->log, 0,
                            "https ssl handshake: 0x%02Xd", buf[0]);
 
@@ -752,6 +752,7 @@ ngx_http_process_request_line(ngx_event_t *rev)
             r->unparsed_uri.len = r->uri_end - r->uri_start;
             r->unparsed_uri.data = r->uri_start;
 
+            r->valid_unparsed_uri = 1;
 
             r->method_name.len = r->method_end - r->request_start + 1;
             r->method_name.data = r->request_line.data;
