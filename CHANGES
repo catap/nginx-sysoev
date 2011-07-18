@@ -1,4 +1,11 @@
 
+Changes with nginx 0.7.69                                        19 Jul 2011
+
+    *) Bugfix: a segmentation fault might occur in a worker process, if a
+       caching was used.
+       Thanks to Lanshun Zhou.
+
+
 Changes with nginx 0.7.68                                        14 Dec 2010
 
     *) Bugfix: if there was a single server for given IPv6 address:port
@@ -4485,7 +4492,7 @@ Changes with nginx 0.1.11                                        02 Dec 2004
 Changes with nginx 0.1.10                                        26 Nov 2004
 
     *) Bugfix: if the request without arguments contains "//", "/./", 
-       "/../" or "%XX" then the lost character in the request line was 
+       "/../" or "%XX" then the last character in the request line was
        lost; the bug had appeared in 0.1.9.
 
     *) Bugfix: the fix in 0.1.9 for the files bigger than 2G on Linux did 
