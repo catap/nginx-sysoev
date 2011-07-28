@@ -737,7 +737,15 @@ ngx_http_fastcgi_create_request(ngx_http_request_t *r)
         lowcase_key = NULL;
 
         if (flcf->header_params) {
-            ignored = ngx_palloc(r->pool, flcf->header_params * sizeof(void *));
+            n = 0;
+            part = &r->headers_in.headers.part;
+
+            while (part) {
+                n += part->nelts;
+                part = part->next;
+            }
+
+            ignored = ngx_palloc(r->pool, n * sizeof(void *));
             if (ignored == NULL) {
                 return NGX_ERROR;
             }
@@ -2002,6 +2010,8 @@ ngx_http_fastcgi_create_loc_conf(ngx_conf_t *cf)
     conf->upstream.cyclic_temp_file = 0;
 
     conf->catch_stderr = NGX_CONF_UNSET_PTR;
+
+    ngx_str_set(&conf->upstream.module, "fastcgi");
 
     return conf;
 }

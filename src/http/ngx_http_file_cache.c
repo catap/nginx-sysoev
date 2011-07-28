@@ -31,7 +31,7 @@ static time_t ngx_http_file_cache_expire(ngx_http_file_cache_t *cache);
 static void ngx_http_file_cache_delete(ngx_http_file_cache_t *cache,
     ngx_queue_t *q, u_char *name);
 static ngx_int_t
-    ngx_http_file_cache_manager_sleep(ngx_http_file_cache_t *cache);
+    ngx_http_file_cache_loader_sleep(ngx_http_file_cache_t *cache);
 static ngx_int_t ngx_http_file_cache_noop(ngx_tree_ctx_t *ctx,
     ngx_str_t *path);
 static ngx_int_t ngx_http_file_cache_manage_file(ngx_tree_ctx_t *ctx,
@@ -376,7 +376,7 @@ ngx_http_file_cache_read(ngx_http_request_t *r, ngx_http_cache_t *c)
     if ((size_t) n < c->header_start) {
         ngx_log_error(NGX_LOG_CRIT, r->connection->log, 0,
                       "cache file \"%s\" is too small", c->file.name.data);
-        return NGX_ERROR;
+        return NGX_DECLINED;
     }
 
     h = (ngx_http_file_cache_header_t *) c->buf->pos;
@@ -409,6 +409,7 @@ ngx_http_file_cache_read(ngx_http_request_t *r, ngx_http_cache_t *c)
             c->node->body_start = c->body_start;
             c->node->exists = 1;
             c->node->uniq = c->uniq;
+            c->node->fs_size = c->fs_size;
 
             cache->sh->size += c->fs_size;
         }
@@ -530,26 +531,19 @@ ngx_http_file_cache_exists(ngx_http_file_cache_t *cache, ngx_http_cache_t *c)
             goto done;
         }
 
-        if (fcn->exists) {
+        if (fcn->exists || fcn->uses >= c->min_uses) {
 
             c->exists = fcn->exists;
-            c->body_start = fcn->body_start;
+            if (fcn->body_start) {
+                c->body_start = fcn->body_start;
+            }
 
             rc = NGX_OK;
 
             goto done;
         }
 
-        if (fcn->uses >= c->min_uses) {
-
-            c->exists = fcn->exists;
-            c->body_start = fcn->body_start;
-
-            rc = NGX_OK;
-
-        } else {
-            rc = NGX_AGAIN;
-        }
+        rc = NGX_AGAIN;
 
         goto done;
     }
@@ -858,7 +852,7 @@ ngx_http_cache_send(ngx_http_request_t *r)
     c = r->cache;
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                  "http file cache send: %s", c->file.name.data);
+                   "http file cache send: %s", c->file.name.data);
 
     /* we need to allocate all before the header would be sent */
 
@@ -1214,7 +1208,7 @@ ngx_http_file_cache_manager(void *data)
             return wait;
         }
 
-        if (ngx_http_file_cache_manager_sleep(cache) != NGX_OK) {
+        if (ngx_quit || ngx_terminate) {
             return next;
         }
     }
@@ -1268,7 +1262,7 @@ ngx_http_file_cache_loader(void *data)
 
 
 static ngx_int_t
-ngx_http_file_cache_manager_sleep(ngx_http_file_cache_t *cache)
+ngx_http_file_cache_loader_sleep(ngx_http_file_cache_t *cache)
 {
     ngx_msec_t  elapsed;
 
@@ -1320,75 +1314,34 @@ ngx_http_file_cache_manage_file(ngx_tree_ctx_t *ctx, ngx_str_t *path)
         (void) ngx_http_file_cache_delete_file(ctx, path);
     }
 
-    return ngx_http_file_cache_manager_sleep(cache);
+    return ngx_http_file_cache_loader_sleep(cache);
 }
 
 
 static ngx_int_t
 ngx_http_file_cache_add_file(ngx_tree_ctx_t *ctx, ngx_str_t *name)
 {
-    u_char                        *p;
-    ngx_fd_t                       fd;
-    ngx_int_t                      n;
-    ngx_uint_t                     i;
-    ngx_file_info_t                fi;
-    ngx_http_cache_t               c;
-    ngx_http_file_cache_t         *cache;
-    ngx_http_file_cache_header_t   h;
+    u_char                 *p;
+    ngx_int_t               n;
+    ngx_uint_t              i;
+    ngx_http_cache_t        c;
+    ngx_http_file_cache_t  *cache;
 
     if (name->len < 2 * NGX_HTTP_CACHE_KEY_LEN) {
         return NGX_ERROR;
     }
 
-    ngx_memzero(&c, sizeof(ngx_http_cache_t));
-
-    fd = ngx_open_file(name->data, NGX_FILE_RDONLY, NGX_FILE_OPEN, 0);
-
-    if (fd == NGX_INVALID_FILE) {
-        ngx_log_error(NGX_LOG_CRIT, ctx->log, ngx_errno,
-                      ngx_open_file_n " \"%s\" failed", name->data);
-        return NGX_ERROR;
-    }
-
-    c.file.fd = fd;
-    c.file.name = *name;
-    c.file.log = ctx->log;
-
-    n = ngx_read_file(&c.file, (u_char *) &h,
-                      sizeof(ngx_http_file_cache_header_t), 0);
-    if (n == NGX_ERROR) {
-        return NGX_ERROR;
-    }
-
-    if ((size_t) n < sizeof(ngx_http_file_cache_header_t)) {
+    if (ctx->size < (off_t) sizeof(ngx_http_file_cache_header_t)) {
         ngx_log_error(NGX_LOG_CRIT, ctx->log, 0,
                       "cache file \"%s\" is too small", name->data);
         return NGX_ERROR;
     }
 
+    ngx_memzero(&c, sizeof(ngx_http_cache_t));
     cache = ctx->data;
 
-    if (ngx_fd_info(fd, &fi) == NGX_FILE_ERROR) {
-        ngx_log_error(NGX_LOG_CRIT, ctx->log, ngx_errno,
-                      ngx_fd_info_n " \"%s\" failed", name->data);
-
-    } else {
-        c.uniq = ngx_file_uniq(&fi);
-        c.valid_sec = h.valid_sec;
-        c.valid_msec = h.valid_msec;
-        c.body_start = h.body_start;
-        c.length = ngx_file_size(&fi);
-        c.fs_size = (ngx_file_fs_size(&fi) + cache->bsize - 1) / cache->bsize;
-    }
-
-    if (ngx_close_file(fd) == NGX_FILE_ERROR) {
-        ngx_log_error(NGX_LOG_ALERT, ctx->log, ngx_errno,
-                      ngx_close_file_n " \"%s\" failed", name->data);
-    }
-
-    if (c.body_start == 0) {
-        return NGX_ERROR;
-    }
+    c.length = ctx->size;
+    c.fs_size = (ctx->fs_size + cache->bsize - 1) / cache->bsize;
 
     p = &name->data[name->len - 2 * NGX_HTTP_CACHE_KEY_LEN];
 
@@ -1435,14 +1388,14 @@ ngx_http_file_cache_add(ngx_http_file_cache_t *cache, ngx_http_cache_t *c)
 
         fcn->uses = 1;
         fcn->count = 0;
-        fcn->valid_msec = c->valid_msec;
+        fcn->valid_msec = 0;
         fcn->error = 0;
         fcn->exists = 1;
         fcn->updating = 0;
         fcn->deleting = 0;
-        fcn->uniq = c->uniq;
-        fcn->valid_sec = c->valid_sec;
-        fcn->body_start = c->body_start;
+        fcn->uniq = 0;
+        fcn->valid_sec = 0;
+        fcn->body_start = 0;
         fcn->fs_size = c->fs_size;
 
         cache->sh->size += c->fs_size;
@@ -1652,6 +1605,8 @@ ngx_http_file_cache_set_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     cache->path->manager = ngx_http_file_cache_manager;
     cache->path->loader = ngx_http_file_cache_loader;
     cache->path->data = cache;
+    cache->path->conf_file = cf->conf_file->file.name.data;
+    cache->path->line = cf->conf_file->line;
 
     if (ngx_add_path(cf, &cache->path) != NGX_OK) {
         return NGX_CONF_ERROR;
